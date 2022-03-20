@@ -9,6 +9,7 @@ import com.example.composebluetooth.domain.BluetoothState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 class MainViewModel @Inject constructor(
@@ -22,9 +23,11 @@ class MainViewModel @Inject constructor(
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    private val _devicesState: MutableStateFlow<DeviceListState> =
-        MutableStateFlow(DeviceListState.Loading)
-    val devicesState: StateFlow<DeviceListState> = _devicesState.asStateFlow()
+    val pairedDevices = bluetoothService.pairedDevices.map { bluetoothDevices ->
+        bluetoothDevices.map { bluetoothDevice ->
+            deviceDomainToBluetoothDevicePresentationMapper.map(bluetoothDevice)
+        }
+    }
 
     fun onBluetoothTurnedOn() {
         _uiState.value = MainUiState.BluetoothTurnedOn
@@ -52,11 +55,7 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun loadDevices(requestPermissionAction: (String) -> Unit) {
-        _devicesState.value = DeviceListState.Result(
-            bluetoothService.getPairedDevices { requestPermissionAction(it) }.map {
-                deviceDomainToBluetoothDevicePresentationMapper.map(it)
-            }
-        )
+    fun findPairedDevices(requestPermissionAction: (String) -> Unit) {
+        bluetoothService.findPairedDevices(requestPermissionAction)
     }
 }

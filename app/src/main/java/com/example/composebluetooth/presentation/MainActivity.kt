@@ -1,10 +1,6 @@
 package com.example.composebluetooth.presentation
 
-import android.bluetooth.BluetoothAdapter
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,8 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.composebluetooth.appComponent
+import com.example.composebluetooth.receivers.broadcast.bluetooth.BluetoothStateBroadcastReceiver
 import com.example.composebluetooth.ui.theme.ComposeBluetoothTheme
-import kotlinx.coroutines.flow.collect
 import javax.inject.Inject
 
 class MainActivity : ComponentActivity() {
@@ -40,45 +36,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appComponent.inject(this)
-        registerReceiver(bluetoothReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        registerBluetoothStateBroadcastReceiver()
         setContent {
             ComposeBluetoothTheme {
                 Scaffold(content = { MainContent(viewModel, ::requestPermission) })
             }
         }
     }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(bluetoothReceiver)
-    }
-
-    private val bluetoothReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action
-            if (action == BluetoothAdapter.ACTION_STATE_CHANGED) {
-                when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
-                    BluetoothAdapter.STATE_ON -> {
-                        viewModel.onBluetoothTurnedOn()
-                        showToast("STATE_ON")
-                    }
-                    BluetoothAdapter.STATE_OFF -> {
-                        viewModel.onBluetoothTurnedOff()
-                        showToast("STATE_OFF")
-                    }
-                    BluetoothAdapter.STATE_TURNING_ON -> {
-                        viewModel.onBluetoothStateChanging("Turning on")
-                        showToast("STATE_TURNING_ON")
-                    }
-                    BluetoothAdapter.STATE_TURNING_OFF -> {
-                        viewModel.onBluetoothStateChanging("Turning off")
-                        showToast("STATE_TURNING_OFF")
-                    }
-                }
-            }
-        }
-    }
-
 
     private val requestPermissionContract =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -98,6 +62,29 @@ class MainActivity : ComponentActivity() {
     private fun requestPermission(permission: String) {
         requestPermissionContract.launch(permission)
     }
+
+    private fun Activity.registerBluetoothStateBroadcastReceiver() {
+        lifecycle.addObserver(
+            BluetoothStateBroadcastReceiver(this,
+                onStateOn = {
+                    viewModel.onBluetoothTurnedOn()
+                    showToast("STATE_ON")
+                },
+                onStateOff = {
+                    viewModel.onBluetoothTurnedOff()
+                    showToast("STATE_OFF")
+                },
+                onStateTurningOn = {
+                    viewModel.onBluetoothStateChanging("Turning on")
+                    showToast("STATE_TURNING_ON")
+                },
+                onStateTurningOff = {
+                    viewModel.onBluetoothStateChanging("Turning off")
+                    showToast("STATE_TURNING_OFF")
+                }
+            )
+        )
+    }
 }
 
 @Composable
@@ -105,7 +92,7 @@ fun MainContent(
     viewModel: MainViewModel,
     permissionRequestAction: (String) -> Unit
 ) {
-    viewModel.loadDevices(permissionRequestAction)
+    viewModel.findPairedDevices(permissionRequestAction)
 
     when (val state = viewModel.uiState.collectAsState().value) {
         MainUiState.BluetoothTurnedOn -> {
@@ -113,7 +100,11 @@ fun MainContent(
                 BluetoothButtonContent(buttonTitle = "Turn off") {
                     viewModel.turnOffBluetooth(permissionRequestAction)
                 }
-                PairedDeviceListContent(deviceListState = viewModel.devicesState.collectAsState())
+                PairedDeviceListContent(
+                    pairedDevicesState = viewModel.pairedDevices.collectAsState(
+                        emptyList()
+                    )
+                )
             }
         }
         MainUiState.BluetoothTurnedOff -> {
@@ -159,32 +150,20 @@ fun BluetoothButtonContent(buttonTitle: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun PairedDeviceListContent(deviceListState: State<DeviceListState>) {
-    when (val state = deviceListState.value) {
-        is DeviceListState.Error -> {
-            Column {
-                Text(text = "ERROR", style = typography.h6)
-            }
-        }
-        DeviceListState.Loading -> {
-            Column {
-                Text(text = "LOADING DEVICES", style = typography.h6)
-            }
-        }
-        is DeviceListState.Result -> {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-            ) {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    items(items = state.data, itemContent = { DeviceListItem(it) })
-                }
-            }
+fun PairedDeviceListContent(pairedDevicesState: State<List<DevicePresentationEntity>>) {
+    val state = pairedDevicesState.value
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            items(items = state, itemContent = { DeviceListItem(it) })
         }
     }
+
 }
 
 @Composable

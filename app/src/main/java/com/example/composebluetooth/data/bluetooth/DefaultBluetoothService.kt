@@ -7,17 +7,22 @@ import android.content.Context
 import android.os.Build
 import com.example.composebluetooth.Mapper
 import com.example.composebluetooth.domain.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 class DefaultBluetoothService @Inject constructor(
     private val context: Context,
     private val permissionVerifier: PermissionVerifier,
-    private val bluetoothStateMapper: Mapper<Int, BluetoothState>
+    private val bluetoothStateMapper: Mapper<Int, BluetoothState>,
 ) : BluetoothService {
 
     private val bluetoothManager: BluetoothManager by lazy {
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     }
+
+    override val pairedDevices: MutableStateFlow<List<BluetoothDeviceDomainEntity>> =
+        MutableStateFlow(emptyList())
 
     override val state: BluetoothState
         get() = bluetoothStateMapper.map(bluetoothManager.adapter.state)
@@ -48,19 +53,22 @@ class DefaultBluetoothService @Inject constructor(
         )
     }
 
-    override fun getPairedDevices(onPermissionDenied: (permission: String) -> Unit): List<BluetoothDeviceDomainEntity> {
+    override fun findPairedDevices(onPermissionDenied: (permission: String) -> Unit) {
         val adapter = bluetoothManager.adapter
-        return checkBluetoothPermission({
-            adapter.bondedDevices.map {
-                BluetoothDeviceDomainEntity(it.name, it.address)
-            }
-        }, {
-            onPermissionDenied(it)
-            emptyList()
-        })
+        return checkBluetoothPermission(
+            onGranted = {
+                pairedDevices.value = adapter.bondedDevices.map { bluetoothDevice ->
+                    BluetoothDeviceDomainEntity(bluetoothDevice.name, bluetoothDevice.address)
+                }
+            },
+            onDenied = {
+                onPermissionDenied(it)
+            })
     }
 
-    private fun BluetoothAdapter.isDisabled() = !isEnabled
+    override fun discoverDevices() {
+
+    }
 
     private fun <T> checkBluetoothPermission(
         onGranted: () -> T,
@@ -75,7 +83,6 @@ class DefaultBluetoothService @Inject constructor(
             }
         }
     }
-
 
     private fun getBluetoothPermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         Manifest.permission.BLUETOOTH_CONNECT
