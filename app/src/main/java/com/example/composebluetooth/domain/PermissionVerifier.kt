@@ -1,5 +1,5 @@
 package com.example.composebluetooth.domain
 
 interface PermissionVerifier {
-    fun check(permission: String): PermissionVerificationResult
+    fun check(vararg permissions: String): PermissionVerificationResult
 }

@@ -29,6 +29,11 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private val _discoveredDevicesState: MutableStateFlow<List<DevicePresentationEntity>> =
+        MutableStateFlow(emptyList())
+
+    val discoveredDevicesState = _discoveredDevicesState.asStateFlow()
+
     fun onBluetoothTurnedOn() {
         _uiState.value = MainUiState.BluetoothTurnedOn
     }
@@ -41,21 +46,46 @@ class MainViewModel @Inject constructor(
         _uiState.value = MainUiState.Loading(title)
     }
 
-    fun turnOnBluetooth(requestPermissionAction: (String) -> Unit) {
+    fun onDeviceFound(bluetoothDevice: BluetoothDeviceDomainEntity) {
+        _discoveredDevicesState.value =
+            _discoveredDevicesState.value + deviceDomainToBluetoothDevicePresentationMapper.map(
+                bluetoothDevice
+            )
+    }
+
+    fun onDiscoveryStarted() {
+        _discoveredDevicesState.value = emptyList()
+    }
+
+    fun onDiscoveryFinished() {
+
+    }
+
+    fun turnOnBluetooth(requestPermissionsAction: (List<String>) -> Unit) {
         val result = bluetoothService.turnOn()
-        if (result is BluetoothActionResult.PermissionRequired) {
-            requestPermissionAction(result.permission)
+        if (result is BluetoothActionResult.PermissionsRequired) {
+            requestPermissionsAction(result.permissions)
         }
     }
 
-    fun turnOffBluetooth(requestPermissionAction: (String) -> Unit) {
+    fun turnOffBluetooth(requestPermissionsAction: (List<String>) -> Unit) {
         val result = bluetoothService.turnOff()
-        if (result is BluetoothActionResult.PermissionRequired) {
-            requestPermissionAction(result.permission)
+        if (result is BluetoothActionResult.PermissionsRequired) {
+            requestPermissionsAction(result.permissions)
         }
     }
 
-    fun findPairedDevices(requestPermissionAction: (String) -> Unit) {
-        bluetoothService.findPairedDevices(requestPermissionAction)
+    fun fetchPairedDevices(requestPermissionsAction: (List<String>) -> Unit) {
+        val result = bluetoothService.fetchPairedDevices()
+        if (result is BluetoothActionResult.PermissionsRequired) {
+            requestPermissionsAction(result.permissions)
+        }
+    }
+
+    fun startDiscovery(requestPermissionsAction: (List<String>) -> Unit) {
+        val result = bluetoothService.startDiscovery()
+        if (result is BluetoothActionResult.PermissionsRequired) {
+            requestPermissionsAction(result.permissions)
+        }
     }
 }

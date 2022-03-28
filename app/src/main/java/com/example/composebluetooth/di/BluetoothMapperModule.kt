@@ -1,8 +1,8 @@
 package com.example.composebluetooth.di
 
+import android.bluetooth.BluetoothDevice
 import com.example.composebluetooth.Mapper
-import com.example.composebluetooth.data.bluetooth.BluetoothDeviceEntity
-import com.example.composebluetooth.data.bluetooth.mapper.BluetoothDeviceToDeviceDomainMapper
+import com.example.composebluetooth.data.bluetooth.mapper.BluetoothDeviceToDomainMapper
 import com.example.composebluetooth.data.bluetooth.mapper.BluetoothStateMapper
 import com.example.composebluetooth.domain.BluetoothDeviceDomainEntity
 import com.example.composebluetooth.domain.BluetoothState
@@ -15,10 +15,6 @@ import dagger.Module
 
 @Module
 interface BluetoothMapperModule {
-    @Binds
-    fun bindBluetoothDeviceToDeviceDomainMapper(
-        bluetoothDeviceToDeviceDomainMapper: BluetoothDeviceToDeviceDomainMapper
-    ): Mapper<BluetoothDeviceEntity, BluetoothDeviceDomainEntity>
 
     @Binds
     fun bindBluetoothDeviceDomainToDevicePresentationMapper(
@@ -34,4 +30,9 @@ interface BluetoothMapperModule {
     fun bindBluetoothStateToMainUiStateMapper(
         bluetoothStateToMainUiStateMapper: BluetoothStateToMainUiStateMapper
     ): Mapper<BluetoothState, MainUiState>
+
+    @Binds
+    fun bindBluetoothDeviceToDomainMapper(
+        bluetoothDeviceToDomainMapper: BluetoothDeviceToDomainMapper
+    ): Mapper<BluetoothDevice, BluetoothDeviceDomainEntity>
 }

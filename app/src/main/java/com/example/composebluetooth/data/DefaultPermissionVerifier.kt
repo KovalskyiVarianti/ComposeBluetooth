@@ -7,10 +7,14 @@ import com.example.composebluetooth.domain.PermissionVerificationResult
 import com.example.composebluetooth.domain.PermissionVerifier
 
 class DefaultPermissionVerifier(private val context: Context) : PermissionVerifier {
-    override fun check(permission: String): PermissionVerificationResult {
-        return when (ActivityCompat.checkSelfPermission(context, permission)) {
-            PackageManager.PERMISSION_GRANTED -> PermissionVerificationResult.Granted
-            else -> PermissionVerificationResult.Denied(permission)
+    override fun check(vararg permissions: String): PermissionVerificationResult {
+        val deniedPermissions = permissions.filterNot { permission ->
+            ActivityCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        }
+        return if (deniedPermissions.isEmpty()) {
+            PermissionVerificationResult.Granted
+        } else {
+            PermissionVerificationResult.Denied(deniedPermissions)
         }
     }
 }

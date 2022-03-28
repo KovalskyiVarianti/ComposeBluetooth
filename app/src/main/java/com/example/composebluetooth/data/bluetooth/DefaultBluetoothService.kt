@@ -1,21 +1,37 @@
 package com.example.composebluetooth.data.bluetooth
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.os.Build
 import com.example.composebluetooth.Mapper
 import com.example.composebluetooth.domain.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 class DefaultBluetoothService @Inject constructor(
     private val context: Context,
     private val permissionVerifier: PermissionVerifier,
     private val bluetoothStateMapper: Mapper<Int, BluetoothState>,
+    private val bluetoothDeviceToDomainMapper: Mapper<BluetoothDevice, BluetoothDeviceDomainEntity>
 ) : BluetoothService {
+
+    private val bluetoothConnectPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        Manifest.permission.BLUETOOTH_CONNECT
+    } else {
+        Manifest.permission.BLUETOOTH
+    }
+
+    private val bluetoothScanPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        listOf(Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        listOf(
+            Manifest.permission.BLUETOOTH,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+    }
 
     private val bluetoothManager: BluetoothManager by lazy {
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -35,8 +51,9 @@ class DefaultBluetoothService @Inject constructor(
                 BluetoothActionResult.Success
             },
             onDenied = { permission ->
-                BluetoothActionResult.PermissionRequired(permission)
-            }
+                BluetoothActionResult.PermissionsRequired(permission)
+            },
+            bluetoothConnectPermission
         )
     }
 
@@ -48,45 +65,60 @@ class DefaultBluetoothService @Inject constructor(
                 BluetoothActionResult.Success
             },
             onDenied = { permission ->
-                BluetoothActionResult.PermissionRequired(permission)
-            }
+                BluetoothActionResult.PermissionsRequired(permission)
+            },
+            bluetoothConnectPermission
         )
     }
 
-    override fun findPairedDevices(onPermissionDenied: (permission: String) -> Unit) {
+    override fun fetchPairedDevices(): BluetoothActionResult {
         val adapter = bluetoothManager.adapter
         return checkBluetoothPermission(
             onGranted = {
                 pairedDevices.value = adapter.bondedDevices.map { bluetoothDevice ->
-                    BluetoothDeviceDomainEntity(bluetoothDevice.name, bluetoothDevice.address)
+                    bluetoothDeviceToDomainMapper.map(bluetoothDevice)
                 }
+                BluetoothActionResult.Success
             },
-            onDenied = {
-                onPermissionDenied(it)
-            })
+            onDenied = { permissions ->
+                BluetoothActionResult.PermissionsRequired(permissions)
+            },
+            bluetoothConnectPermission
+        )
     }
 
-    override fun discoverDevices() {
-
+    override fun startDiscovery(): BluetoothActionResult {
+        val adapter = bluetoothManager.adapter
+        return checkBluetoothPermission(
+            onGranted = {
+                if (adapter.isDiscovering) {
+                    adapter.cancelDiscovery()
+                }
+                if (adapter.startDiscovery()) {
+                    BluetoothActionResult.Success
+                } else {
+                    BluetoothActionResult.Failure
+                }
+            },
+            onDenied = { permissions ->
+                BluetoothActionResult.PermissionsRequired(permissions)
+            },
+            *bluetoothScanPermissions.toTypedArray()
+        )
     }
 
     private fun <T> checkBluetoothPermission(
         onGranted: () -> T,
-        onDenied: (permission: String) -> T
+        onDenied: (permissions: List<String>) -> T,
+        vararg permissions: String
     ): T {
-        return when (val result = permissionVerifier.check(getBluetoothPermission())) {
+        return when (val result = permissionVerifier.check(*permissions)) {
             PermissionVerificationResult.Granted -> {
                 onGranted()
             }
             is PermissionVerificationResult.Denied -> {
-                onDenied(result.permission)
+                onDenied(result.permissions)
             }
         }
-    }
-
-    private fun getBluetoothPermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        Manifest.permission.BLUETOOTH_CONNECT
-    } else {
-        Manifest.permission.BLUETOOTH
     }
 }

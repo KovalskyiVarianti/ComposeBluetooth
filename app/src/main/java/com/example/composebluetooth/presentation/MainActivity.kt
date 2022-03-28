@@ -1,6 +1,5 @@
 package com.example.composebluetooth.presentation
 
-import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,8 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
+import com.example.composebluetooth.R
 import com.example.composebluetooth.appComponent
+import com.example.composebluetooth.receivers.broadcast.bluetooth.BluetoothDevicesBroadcastReceiver
 import com.example.composebluetooth.receivers.broadcast.bluetooth.BluetoothStateBroadcastReceiver
 import com.example.composebluetooth.ui.theme.ComposeBluetoothTheme
 import javax.inject.Inject
@@ -36,72 +36,80 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appComponent.inject(this)
-        registerBluetoothStateBroadcastReceiver()
+        registerBluetoothReceivers()
         setContent {
             ComposeBluetoothTheme {
-                Scaffold(content = { MainContent(viewModel, ::requestPermission) })
+                Scaffold(content = { MainContent(viewModel, this::requestPermissions) })
             }
         }
+    }
+
+    private fun registerBluetoothReceivers() {
+        BluetoothStateBroadcastReceiver(
+            this,
+            onStateOn = {
+                viewModel.onBluetoothTurnedOn()
+            },
+            onStateOff = {
+                viewModel.onBluetoothTurnedOff()
+            },
+            onStateTurningOn = {
+                viewModel.onBluetoothStateChanging(getString(R.string.bluetooth_turning_on))
+            },
+            onStateTurningOff = {
+                viewModel.onBluetoothStateChanging(getString(R.string.bluetooth_turning_off))
+            }
+        ).apply { startObserving() }
+        BluetoothDevicesBroadcastReceiver(
+            this,
+            onDeviceFound = { bluetoothDeviceDomainEntity ->
+                viewModel.onDeviceFound(bluetoothDeviceDomainEntity)
+                showToast("DEVICE FOUND ${bluetoothDeviceDomainEntity.name}")
+            },
+            onDiscoveryStarted = {
+                viewModel.onDiscoveryStarted()
+                showToast("DISCOVERY STARTED")
+            },
+            onDiscoveryFinished = {
+                viewModel.onDiscoveryFinished()
+                showToast("DISCOVERY FINISHED")
+            }
+        ).apply { startObserving() }
     }
 
     private val requestPermissionContract =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                lifecycleScope.launchWhenCreated {
-                    viewModel.uiState.collect { state ->
-                        when (state) {
-                            MainUiState.BluetoothTurnedOff -> viewModel.turnOnBluetooth { }
-                            MainUiState.BluetoothTurnedOn -> viewModel.turnOffBluetooth { }
-                            else -> {}
-                        }
-                    }
-                }
-            }
-        }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
 
-    private fun requestPermission(permission: String) {
-        requestPermissionContract.launch(permission)
-    }
-
-    private fun Activity.registerBluetoothStateBroadcastReceiver() {
-        lifecycle.addObserver(
-            BluetoothStateBroadcastReceiver(this,
-                onStateOn = {
-                    viewModel.onBluetoothTurnedOn()
-                    showToast("STATE_ON")
-                },
-                onStateOff = {
-                    viewModel.onBluetoothTurnedOff()
-                    showToast("STATE_OFF")
-                },
-                onStateTurningOn = {
-                    viewModel.onBluetoothStateChanging("Turning on")
-                    showToast("STATE_TURNING_ON")
-                },
-                onStateTurningOff = {
-                    viewModel.onBluetoothStateChanging("Turning off")
-                    showToast("STATE_TURNING_OFF")
-                }
-            )
-        )
+    private fun requestPermissions(permissions: List<String>) {
+        requestPermissionContract.launch(permissions.toTypedArray())
     }
 }
 
 @Composable
 fun MainContent(
     viewModel: MainViewModel,
-    permissionRequestAction: (String) -> Unit
+    permissionsRequestAction: (List<String>) -> Unit
 ) {
-    viewModel.findPairedDevices(permissionRequestAction)
+    viewModel.fetchPairedDevices(permissionsRequestAction)
 
     when (val state = viewModel.uiState.collectAsState().value) {
         MainUiState.BluetoothTurnedOn -> {
             Column {
                 BluetoothButtonContent(buttonTitle = "Turn off") {
-                    viewModel.turnOffBluetooth(permissionRequestAction)
+                    viewModel.turnOffBluetooth(permissionsRequestAction)
                 }
-                PairedDeviceListContent(
-                    pairedDevicesState = viewModel.pairedDevices.collectAsState(
+                BluetoothButtonContent(buttonTitle = "Discover") {
+                    viewModel.startDiscovery(permissionsRequestAction)
+                }
+                DeviceListContent(
+                    title = "Paired devices",
+                    devicesState = viewModel.pairedDevices.collectAsState(
+                        emptyList()
+                    )
+                )
+                DeviceListContent(
+                    title = "Discovered devices",
+                    devicesState = viewModel.discoveredDevicesState.collectAsState(
                         emptyList()
                     )
                 )
@@ -109,7 +117,7 @@ fun MainContent(
         }
         MainUiState.BluetoothTurnedOff -> {
             BluetoothButtonContent(buttonTitle = "Turn on") {
-                viewModel.turnOnBluetooth(permissionRequestAction)
+                viewModel.turnOnBluetooth(permissionsRequestAction)
             }
         }
         is MainUiState.Loading -> {
@@ -150,20 +158,20 @@ fun BluetoothButtonContent(buttonTitle: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun PairedDeviceListContent(pairedDevicesState: State<List<DevicePresentationEntity>>) {
-    val state = pairedDevicesState.value
+fun DeviceListContent(title: String, devicesState: State<List<DevicePresentationEntity>>) {
+    val state = devicesState.value
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
     ) {
+        Text(text = title, style = typography.h5)
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         ) {
             items(items = state, itemContent = { DeviceListItem(it) })
         }
     }
-
 }
 
 @Composable
@@ -182,7 +190,7 @@ fun DeviceListItem(deviceEntity: DevicePresentationEntity) {
                     .fillMaxWidth()
                     .align(Alignment.CenterVertically)
             ) {
-                Text(text = deviceEntity.name, style = typography.h4)
+                Text(text = deviceEntity.name ?: "Unknown", style = typography.h4)
                 Text(text = deviceEntity.macAddress, style = typography.h6)
             }
         }

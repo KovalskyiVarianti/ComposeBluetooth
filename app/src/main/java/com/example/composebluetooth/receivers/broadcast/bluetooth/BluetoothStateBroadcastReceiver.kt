@@ -8,15 +8,17 @@ import android.content.IntentFilter
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 
-class BluetoothStateBroadcastReceiver(
-    private val context: Context,
+class BluetoothStateBroadcastReceiver<T>(
+    context: T,
     onStateOn: () -> Unit,
     onStateOff: () -> Unit,
     onStateTurningOn: () -> Unit,
     onStateTurningOff: () -> Unit,
-) : DefaultLifecycleObserver {
+) : BroadcastReceiverWrapper<T>(context) where T : Context, T : LifecycleOwner {
 
-    private val bluetoothReceiver = object : BroadcastReceiver() {
+    override val intentFilter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
+
+    override val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action
             if (action == BluetoothAdapter.ACTION_STATE_CHANGED) {
@@ -36,16 +38,5 @@ class BluetoothStateBroadcastReceiver(
                 }
             }
         }
-    }
-
-    override fun onCreate(owner: LifecycleOwner) {
-        context.applicationContext.registerReceiver(
-            bluetoothReceiver,
-            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
-        )
-    }
-
-    override fun onDestroy(owner: LifecycleOwner) {
-        context.applicationContext.unregisterReceiver(bluetoothReceiver)
     }
 }
